@@ -5,7 +5,7 @@
 ## Integrantes da Equipe
 
 * Matheus Soares Oliveira da Silva (191045)
-* Vitória ... ()
+* Vitória Aparecida dos Santos (202881)
 
 
 
