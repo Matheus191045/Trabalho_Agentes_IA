@@ -1,0 +1,22 @@
+
+Instalar Ollama instalador
+rodar no terminal 
+ollama pull qwen3:1.7b
+
+depois
+ollana serve
+
+
+rodar no terminal (1 vez)
+pip install ollama pandas openpyxl pypdf chromadb sentence-transformers mcp
+
+
+
+rodar no terminal (1 vez)
+python indexar_documento.py
+
+
+rodar (ao iniciar)
+python chat.py
+
+

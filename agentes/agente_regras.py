@@ -1,18 +1,22 @@
 from sentence_transformers import SentenceTransformer
 import chromadb
 
-# Modelo de embeddings
-modelo = SentenceTransformer("all-MiniLM-L6-v2")
+_modelo = None
+_collection = None
 
-# Banco vetorial
-client = chromadb.PersistentClient(path="./chroma_db")
 
-collection = client.get_collection(
-    name="politica_financeira"
-)
+def _get_deps():
+    global _modelo, _collection
+    if _modelo is None:
+        _modelo = SentenceTransformer("all-MiniLM-L6-v2")
+    if _collection is None:
+        client = chromadb.PersistentClient(path="./chroma_db")
+        _collection = client.get_collection(name="politica_financeira")
+    return _modelo, _collection
 
 
 def consultar_regras(pergunta):
+    modelo, collection = _get_deps()
 
     embedding_pergunta = modelo.encode(pergunta).tolist()
 

@@ -1,96 +1,143 @@
+import asyncio
+import os
+import re
+import sys
+from pathlib import Path
 import ollama
-from agentes.coordenador import processar_pergunta
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
-print("=" * 50)
-print("ASSISTENTE FINANCEIRO IA")
-print("=" * 50)
+SYSTEM_PROMPT = """Você é um analista financeiro corporativo com acesso a ferramentas especializadas.
 
-while True:
+Ao receber uma pergunta, use a ferramenta mais adequada para obter os dados e responda
+com base EXCLUSIVAMENTE no que ela retornar.
 
-    pergunta = input("\nPergunta: ")
+REGRAS:
+- Nunca invente números, clientes ou valores
+- Nunca faça cálculos próprios
+- Nunca use informações de perguntas anteriores
+- Responda sempre em português
+- Se a informação não estiver nos dados, informe que não é possível concluir
 
-    if pergunta.lower() == "sair":
-        break
+Formato da resposta:
+RESUMO:
+...
 
-    dados = processar_pergunta(pergunta)
+PONTOS DE ATENÇÃO:
+- ...
 
-    print("\n=== DADOS DOS AGENTES ===")
-    print(dados)
-
-    resposta = ollama.chat(
-        model="qwen3:1.7b",
-        messages=[
-                    {
-            "role": "system",
-            "content": """
-        Você é um analista financeiro corporativo.
-
-        REGRAS:
-
-        - Utilize somente os dados recebidos.
-        - Nunca invente números.
-        - Nunca invente clientes.
-        - Nunca altere valores.
-        - Nunca altere scores.
-        - Nunca faça cálculos próprios.
-        - Utilize exatamente as classificações de risco recebidas.
-        - Não contradiga os agentes.
-        - Seja objetivo.
-        - Responda em português.
-        - Utilize o termo "inadimplência" em vez de "default".
-
-        - Não classifique clientes por conta própria.
-        - Não interprete percentuais.
-        - Não realize cálculos matemáticos.
-        - Não deduza informações ausentes.
-        - Se a informação não estiver nos dados, informe que não é possível concluir.
-        - Clientes em atraso são candidatos prioritários para cobrança.
-        - Clientes acima do limite de crédito devem ser monitorados.
+RECOMENDAÇÃO:
+...
+"""
 
 
-        Quando houver RESUMO EXECUTIVO:
-        utilize os números informados no resumo.
+def strip_think(text: str) -> str:
+    """Remove tags <think>...</think> geradas pelo Qwen 3."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-        Quando houver clientes classificados:
-        respeite exatamente ALTO RISCO, MÉDIO RISCO e BAIXO RISCO.
 
-        Formato:
+def mcp_tools_para_ollama(mcp_tools) -> list:
+    """Converte a lista de tools do MCP para o formato esperado pelo Ollama."""
+    resultado = []
+    for tool in mcp_tools:
+        schema = tool.inputSchema if tool.inputSchema else {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+        resultado.append({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": schema,
+            },
+        })
+    return resultado
 
-        RESUMO:
-        ...
 
-        PONTOS DE ATENÇÃO:
-        - ...
-
-        RECOMENDAÇÃO:
-        ...
-        """
-        },
-            {
-                "role": "user",
-                "content": f"""
-                            Pergunta do usuário:
-                            {pergunta}
-
-                            Dados dos agentes:
-                            {dados}
-
-                            IMPORTANTE:
-
-                            - Utilize exclusivamente os dados apresentados.
-                            - Não utilize conhecimento externo.
-                            - Não utilize informações de perguntas anteriores.
-                            - Considere apenas os dados recebidos na pergunta atual.
-                            - Não faça suposições.
-                            - Não invente informações.
-                            
-
-                            Responda somente com base nos dados acima.
-                            """
-            }
-        ]
+async def main():
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=["mcp_server.py"],
+        env=dict(os.environ),
+        cwd=str(Path(__file__).parent),
     )
 
-    print("\n=== RESPOSTA IA ===")
-    print(resposta["message"]["content"])
+    print("=" * 50)
+    print("  ASSISTENTE FINANCEIRO IA")
+    print("  Arquitetura: MCP + RAG + LLM Local")
+    print("=" * 50)
+    print("Inicializando servidor MCP...\n")
 
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            tools_result = await session.list_tools()
+            ollama_tools = mcp_tools_para_ollama(tools_result.tools)
+            nomes = [t["function"]["name"] for t in ollama_tools]
+            print(f"[MCP] {len(ollama_tools)} ferramentas carregadas: {nomes}")
+            print("\nDigite 'sair' para encerrar.\n")
+
+            while True:
+                pergunta = input("Pergunta: ").strip()
+                if not pergunta:
+                    continue
+                if pergunta.lower() == "sair":
+                    break
+
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": pergunta},
+                ]
+
+                resposta = ollama.chat(
+                    model="qwen3:1.7b",
+                    messages=messages,
+                    tools=ollama_tools,
+                )
+
+                msg = resposta["message"]
+                tool_calls = msg.get("tool_calls") or []
+
+                if tool_calls:
+                    messages.append({
+                        "role": "assistant",
+                        "content": msg.get("content", ""),
+                        "tool_calls": tool_calls,
+                    })
+
+                    for tc in tool_calls:
+                        nome = tc["function"]["name"]
+                        args = tc["function"]["arguments"] or {}
+
+                        print(f"\n[MCP] → Chamando ferramenta: {nome}")
+
+                        resultado = await session.call_tool(nome, args)
+                        dados = resultado.content[0].text if resultado.content else "Sem dados retornados."
+
+                        print("\n=== DADOS DOS AGENTES ===")
+                        print(dados)
+
+                        messages.append({
+                            "role": "tool",
+                            "content": dados,
+                        })
+
+                    resposta_final = ollama.chat(
+                        model="qwen3:1.7b",
+                        messages=messages,
+                    )
+                    conteudo = strip_think(resposta_final["message"]["content"])
+
+                else:
+                    conteudo = strip_think(msg.get("content", ""))
+
+                print("\n=== RESPOSTA IA ===")
+                print(conteudo)
+                print()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
