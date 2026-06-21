@@ -78,6 +78,15 @@ async def main():
             ollama_tools = mcp_tools_para_ollama(tools_result.tools)
             nomes = [t["function"]["name"] for t in ollama_tools]
             print(f"[MCP] {len(ollama_tools)} ferramentas carregadas: {nomes}")
+
+            print("\nExemplos de perguntas que você pode fazer:")
+            print("  • Qual o saldo de Ricardo?")
+            print("  • Quais clientes estão inadimplentes?")
+            print("  • Qual o resumo geral da carteira?")
+            print("  • Quem está acima de 80% do limite de crédito?")
+            print("  • Posso conceder crédito ao cliente Ricardo?")
+            print("  • Tem alguma regra de inadimplência?")
+            print("  • Qual a política de bloqueio de clientes?")
             print("\nDigite 'sair' para encerrar.\n")
 
             while True:
@@ -86,6 +95,8 @@ async def main():
                     continue
                 if pergunta.lower() == "sair":
                     break
+
+                print("\nPensando...", flush=True)
 
                 messages = [
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -120,6 +131,8 @@ async def main():
                         print("\n=== DADOS DOS AGENTES ===")
                         print(dados)
 
+                        print("\nAGUARDANDO RESPOSTA DA IA")
+
                         messages.append({
                             "role": "tool",
                             "content": dados,
@@ -134,7 +147,7 @@ async def main():
                 else:
                     conteudo = strip_think(msg.get("content", ""))
 
-                print("\n=== RESPOSTA IA ===")
+                print("\n=== RESPOSTA DA IA ===")
                 print(conteudo)
                 print()
 

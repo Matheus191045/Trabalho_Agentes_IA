@@ -9,6 +9,7 @@ from agentes.credito import analisar as _credito
 from agentes.risco import analisar as _risco
 from agentes.analista_ia import analisar_carteira as _analisar_carteira
 from agentes.agente_regras import consultar_regras as _consultar_regras
+from agentes.concessao_credito import analisar_concessao as _concessao
 
 mcp = FastMCP("Assistente Financeiro IA")
 
@@ -47,6 +48,12 @@ def analisar_uso_credito() -> str:
 def classificar_risco_clientes() -> str:
     """Classifica todos os clientes em ALTO RISCO, MÉDIO RISCO ou BAIXO RISCO com base em score de crédito e situação de inadimplência."""
     return _risco()
+
+
+@mcp.tool()
+def analisar_concessao_credito(cliente: str) -> str:
+    """Analisa se é seguro conceder crédito a um cliente específico. Avalia score, inadimplência e utilização do limite. Informe o nome do cliente."""
+    return _concessao(cliente)
 
 
 if __name__ == "__main__":
